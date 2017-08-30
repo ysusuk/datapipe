@@ -30,12 +30,13 @@ object Terminal extends App {
   val in: Source[Cmd, NotUsed] = Source(immut.Seq[Cmd](LS, Cat("cv.pdf"), LS, Cat("resume.pdf")))
   val out: Sink[String, Future[Done]] = Sink.foreach(println)
 
-  trait Evaluator[T <: Cmd] {
+  trait Evaluator[-T] {
     def eval(cmd: T): String
   }
 
   object Evaluator {
-    def apply[T](cmd: T)(implicit evaluator: Evaluator[T]): Evaluator[T] = evaluator
+    // use summoner/materializer, e.g. eval[LS.type] returns evalLS
+    def apply[T](implicit evaluator: Evaluator[T]): Evaluator[T] = evaluator
 
     implicit val evalLS = new Evaluator[LS.type] {
       def eval(lsCmd: LS.type): String =
@@ -52,12 +53,16 @@ object Terminal extends App {
     }
   }
 
-//  import Evaluator._
+  import Evaluator._
+  
+  def eval(cmd: Cmd): String = cmd match {
+    case ls: LS.type =>
+      Evaluator[LS.type].eval(ls)
+    case cat: Cat =>
+      Evaluator[Cat].eval(cat)
+  }
 
-  // use summoner, e.g. eval[LS.type] returns evalLS
-  def eval[T <: Cmd](cmd: T): String = Evaluator[T].eval(cmd.asInstanceOf[Cat])
-
-  val flow: Flow[Cmd, String, NotUsed] = Flow[Cmd].map(cmd => Evaluator(cmd))
+  val flow: Flow[Cmd, String, NotUsed] = Flow[Cmd].map(cmd => eval(cmd))
 
   import scala.concurrent.ExecutionContext.Implicits.global
 
@@ -85,8 +90,8 @@ object Terminal extends App {
     val bcast = b.add(Broadcast[Cmd](2))
     in ~> bcast.in
     // would like Flow to be a Prism, so Flow[LS.type] and Flow[Cat]
-    bcast.out(0) ~> Flow[Cmd].map(_ => "") ~> out
-    bcast.out(1) ~> Flow[Cmd].map(_ => "") ~> out
+    bcast.out(0) ~> Flow[Cmd].map(eval) ~> out
+    bcast.out(1) ~> Flow[Cmd].map(eval) ~> out
     ClosedShape
   })
 
