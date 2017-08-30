@@ -1,12 +1,12 @@
 import akka.{ Done, NotUsed }
-import akka.stream.scaladsl.Keep
+import akka.stream.KillSwitches
 import akka.actor.ActorSystem
 import akka.stream.ActorMaterializer
-import akka.stream.scaladsl.{Flow, RunnableGraph, Sink, Source}
+import akka.stream.scaladsl.{Flow, Keep, RunnableGraph, Sink, Source}
 import scala.concurrent.Future
 
 object Terminal extends App {
-  implicit val system = ActorSystem("Cmds Stream")
+  implicit val system = ActorSystem("Cmds-Stream")
   implicit val materializer = ActorMaterializer()
 
 //  val helloWorldStream: RunnableGraph[NotUsed] = Source.single("Hello world")
@@ -31,7 +31,7 @@ object Terminal extends App {
   val in: Source[Cmd, NotUsed] = Source(immut.Seq[Cmd](LS, Cat("cv.pdf"), LS, Cat("resume.pdf")))
   val out: Sink[String, Future[Done]] = Sink.foreach(println)
 
-  val flow: Flow[Cmd, String, NotUsed] = Flow[Cmd].map {
+  def eval(cmd: Cmd): String =  cmd match {
     case LS =>
       "cv.pdf, resume.pdf"
     case Cat(fileName) =>
@@ -43,11 +43,24 @@ object Terminal extends App {
       }
   }
 
-  // ??? Future[Done]
-  val res: NotUsed = in
-    .via(flow)
-    .to(out)
-    .run()
+  val flow: Flow[Cmd, String, NotUsed] = Flow[Cmd].map(eval)
 
-  system.shutdown()
+  import scala.concurrent.ExecutionContext.Implicits.global
+
+  // ??? why this is Future[Done]
+  val res1 = in
+    .map(eval)
+    .runForeach(println)
+
+  res1.onComplete { _ => system.shutdown }
+
+  // ??? but this is not Future[Done]
+  val res2 = in
+    .via(flow)
+    // shutdown condition
+    .take(10)
+    .to(out)
+    .run
+
+  // ??? sequence all futures with Future.sequence, and shutdown on complete
 }
