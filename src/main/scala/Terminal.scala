@@ -30,28 +30,34 @@ object Terminal extends App {
   val in: Source[Cmd, NotUsed] = Source(immut.Seq[Cmd](LS, Cat("cv.pdf"), LS, Cat("resume.pdf")))
   val out: Sink[String, Future[Done]] = Sink.foreach(println)
 
-  trait Eval[T <: Cmd] {
-    def apply(cmd: T): String
+  trait Evaluator[T <: Cmd] {
+    def eval(cmd: T): String
   }
 
-  implicit object evalLS extends Eval[LS.type] {
-    def apply(lsCmd: LS.type): String =
-      "cv.pdf, resume.pdf"
-  }
+  object Evaluator {
+    def apply[T](cmd: T)(implicit evaluator: Evaluator[T]): Evaluator[T] = evaluator
 
-  implicit object evalCat extends Eval[Cat] {
-    def apply(catCmd: Cat): String = catCmd.fileName match {
-      case "cv.pdf" =>
-        "Mr. Yuriy Susuk"
-      case "resume.pdf" =>
-        "Herr Yuriy Susuk"
+    implicit val evalLS = new Evaluator[LS.type] {
+      def eval(lsCmd: LS.type): String =
+        "cv.pdf, resume.pdf"
+    }
+
+    implicit val evalCat = new Evaluator[Cat] {
+      def eval(catCmd: Cat): String = catCmd.fileName match {
+        case "cv.pdf" =>
+          "Mr. Yuriy Susuk"
+        case "resume.pdf" =>
+          "Herr Yuriy Susuk"
+      }
     }
   }
 
-  // use summoner, e.g. eval[LS.type] returns evalLS
-  def eval[T <: Cmd](cmd: T)(implicit evalF: Eval[T]): String = evalF(cmd)
+//  import Evaluator._
 
-  val flow: Flow[Cmd, String, NotUsed] = Flow[Cmd].map(eval)
+  // use summoner, e.g. eval[LS.type] returns evalLS
+  def eval[T <: Cmd](cmd: T): String = Evaluator[T].eval(cmd.asInstanceOf[Cat])
+
+  val flow: Flow[Cmd, String, NotUsed] = Flow[Cmd].map(cmd => Evaluator(cmd))
 
   import scala.concurrent.ExecutionContext.Implicits.global
 
