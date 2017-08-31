@@ -72,7 +72,7 @@ object Terminal extends App {
     .map(eval)
     .runForeach(println)
 
-  res1.onComplete { _ => system.shutdown }
+//  res1.onComplete { _ => system.shutdown }
 
   // linear
   // ??? but this is not Future[Done]
@@ -83,17 +83,21 @@ object Terminal extends App {
     .to(out)
     .run
 
+  val sumOut: Sink[Int, Future[Int]] = Sink.fold[Int, Int](0)(_ + _)
+
   // branching
-  RunnableGraph.fromGraph(GraphDSL.create() { implicit b => 
+  val g = RunnableGraph.fromGraph(GraphDSL.create() { implicit b => 
     import GraphDSL.Implicits._
 
     val bcast = b.add(Broadcast[Cmd](2))
-    in ~> bcast.in
-    // would like Flow to be a Prism, so Flow[LS.type] and Flow[Cat]
-    bcast.out(0) ~> Flow[Cmd].map(eval) ~> out
-    bcast.out(1) ~> Flow[Cmd].map(eval) ~> out
+    in ~> bcast    // would like Flow to be a Prism, so Flow[LS.type] and Flow[Cat]
+    bcast.out(0) ~> Flow[Cmd].map(cmd => eval(cmd) + " broadcast out 0" ) ~> out
+    bcast.out(1) ~> Flow[Cmd].map(cmd => eval(cmd) + " broadcast out 1") ~> out
+//    bcast.out(2) ~> Flow[Cmd].map(_ => 1) ~> sumOut
     ClosedShape
   })
+
+  g.run
 
   // ??? sequence all futures with Future.sequence, and shutdown on complete
 }
