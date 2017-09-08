@@ -1,24 +1,47 @@
-import akka.actor.{ Actor, ActorSystem, Props }
+import akka.actor.{ Actor, ActorLogging, ActorSystem, Props }
 
 object IoT extends App {
 
   implicit val system = ActorSystem("IoT-Stream")
 
-  case class Temperature(value: Int)
+  object Device {
+    def props(groupId: String, deviceId: String): Props = Props(new Device(groupId, deviceId))
 
-  sealed trait Device
-  case class Thermostat(temprature: Temperature) extends Device
+    final case class RequestId(value: Long)
+    // write
+    final case class Temperature(value: Double)
+    final case class Update(requestId: RequestId, temperature: Temperature)
+    final case class Updated(requestId: RequestId)
 
-  class DeviceManager extends Actor {
+    // query
+    final case class RequestTemperature(requestId: RequestId)
+    final case class Response(requestId: RequestId, maybeTemperature: Option[Temperature])
+  }
 
-    override def receive: Receive = {
-      case Thermostat(temperature) =>
-        println(temperature)
+  class Device(groupId: String, deviceId: String) extends Actor with ActorLogging {
+    import Device._
+
+    var maybeTemperature: Option[Temperature] = None
+
+    override def preStart(): Unit = log.info("Device actor {}-{} started", groupId, deviceId)
+    override def postStop(): Unit = log.info("Device actor {}-{} stopped", groupId, deviceId)
+
+    def receive: Receive = {
+      case Update(requestId, temperature) =>
+        log.info("Recorded temperature reading {} with {}", temperature.value, requestId.value)
+        maybeTemperature = Some(temperature)
+        sender ! Updated(requestId)
+      case RequestTemperature(requestId) =>
+        log.info("Requested temperature {} with {}", maybeTemperature, requestId.value)
+        sender ! Response(requestId, maybeTemperature)
     }
   }
 
-  val deviceManager = system.actorOf(Props[DeviceManager], "device-manager")
-  deviceManager ! Thermostat(Temperature(123))
+  val device = system.actorOf(Device.props("group", "device"))
+
+  device ! Device.Update(Device.RequestId(1), Device.Temperature(26))
+  device ! Device.RequestTemperature(Device.RequestId(1))
 
   system.shutdown
 }
+
