@@ -21,6 +21,8 @@ object IoT extends App {
   class Device(groupId: String, deviceId: String) extends Actor with ActorLogging {
     import Device._
 
+    // todo: rather give temperature together with groupId and deviceId
+    // then no need for option value, and generally write protocol
     var maybeTemperature: Option[Temperature] = None
 
     override def preStart(): Unit = log.info("Device actor {}-{} started", groupId, deviceId)
